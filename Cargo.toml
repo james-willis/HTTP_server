@@ -1,0 +1,6 @@
+[package]
+name = "HTTP_server"
+version = "0.1.0"
+authors = ["James Willis <jameswillis2017@u.northwestern.edu>"]
+
+[dependencies]
