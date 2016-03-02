@@ -3,10 +3,13 @@ use std::path::Path;
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{channel, sync_channel, Sender, Receiver};
 use std::thread;
+use std::io::BufReader;
 //use std::sync::{Mutex, Arc};
 use std::io::{Read, Write};
 use chrono::*;
 extern crate chrono;
+//#[allow(unused_imports)];
+//#[allow(unused_must_use)];
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
@@ -25,12 +28,15 @@ fn main() {
     });
 
     //spin up listener threads
+    println!("entering loop");
     for stream in listener.incoming() {
+        println!("Inside loop");
         let log = log.clone();
         let locked_files = locked_files.clone();
         match stream {
             Ok(stream) => {
                 thread::spawn(move|| {
+                    println!("Starting thread to handle client");
                     handle_client(stream, log, locked_files);
                 });
             },
@@ -46,16 +52,26 @@ fn handle_client(mut stream: TcpStream, rec: Sender<String>, locked_list: Vec<St
     //determines status of given request,
     //serves the appropriate request, and writes to log
     let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let mut buf = String::new();
-    stream.read_to_string(&mut buf);
+    //let mut buf:Vec<u8> = Vec::new();
+    let mut buf:String = String::new();
+    let mut input_reader = BufReader::new(stream);
+    buf = input_reader.lines().next().unwrap().unwrap();
+    stream = input_reader.into_inner();
+    println!("Finished reading input stream");
+    //let mut input_buf:String = String::from_utf8(buf).unwrap();
+    println!("{}", buf);
     let filepath_result = is_valid_request(&buf);
+    println!("Finished checking if request is valid");
     if filepath_result.is_ok() {
+        println!("File path result is ok");
         let filepath = Path::new(filepath_result.unwrap());
         let mut target = File::open(&filepath);
+        println!("opened file");
         match target {
             Ok(mut target_file) => {
                 //if access (200)
                 if !locked_list.contains(&filepath.to_str().unwrap().to_string()) {
+                    println!("200 OK");
                     rec.send("HTTP/1.0 200 OK\n".to_string());
                     let mut contents = String::new();
                     let file_size = target_file.read_to_string(&mut contents);
@@ -73,20 +89,24 @@ fn handle_client(mut stream: TcpStream, rec: Sender<String>, locked_list: Vec<St
                     stream.write(&size_msg.as_bytes());
                     rec.send(contents);
                     rec.send("\n\n".to_string());
+                    println!("Serving File");
                 }
                 //else 403
                 else {
+                    println!("403 Forbidden");
                     rec.send("HTTP/1.0 403 Forbidden\n".to_string());
                     stream.write(&"HTTP/1.0 403 Forbidden\n\n".as_bytes());
                 }
             },
             Err(e) => {
+                println!("404 not found");
                 rec.send("HTTP/1.0 404 Not Found\n".to_string());
                 stream.write(&"HTTP/1.0 404 Not Found\n\n".as_bytes());
             }
         }
     }
     else {
+        println!("400 bad request");
         stream.write(&"HTTP/1.0 400 Bad Request\n\n".as_bytes());
         rec.send("HTTP/1.0 400 Bad Request\n".to_string());
     }
